@@ -309,6 +309,10 @@ img{max-width:100%}
 .pronto-t b{font-size:16px; font-weight:600}
 .pronto-t span{font-size:13.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .pronto .link{align-self:center; padding:4px 2px}
+#sec-aprov{margin:0 0 24px}
+.primary svg{vertical-align:-3px}
+.item-ico.ok{background:var(--green-soft); color:var(--green)}
+.item-ico.dev{background:var(--danger-soft); color:var(--danger)}
 #btn-dados{padding:0 11px}
 @media (max-width:440px){ #btn-hist{padding:0 11px} #btn-hist span{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)} .top{gap:10px} }
 </style>
@@ -331,6 +335,14 @@ img{max-width:100%}
     <p class="tape-s" id="tot-sub">Nenhum lançamento ainda</p>
     <div class="adi" id="adi"></div>
   </section>
+
+  <section id="sec-aprov" aria-labelledby="h-aprov" hidden>
+    <h2 class="sec" id="h-aprov">Aprovações</h2>
+    <button class="primary" type="button" id="btn-receber">Abrir relatório recebido</button>
+    <p class="note" style="margin:6px 2px 14px">Salve em Arquivos o PDF que chegou pelo WhatsApp ou e-mail e escolha aqui.</p>
+    <div id="aprov-lista"></div>
+  </section>
+  <input type="file" accept="application/pdf,.pdf" id="in-pdf" class="vh" tabindex="-1" aria-hidden="true">
 
   <section aria-labelledby="h-lancar">
     <h2 class="sec" id="h-lancar">Lançar despesa</h2>
@@ -983,7 +995,7 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
     return 78;
   };
 
-  var nRel = 0, pag1 = null;
+  var nRel = 0, pag1 = null, aprovPos = null;
   if (!opts.soFotos) {
     nova();
     pag1 = pg;
@@ -1111,6 +1123,7 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
     // ---------- assinaturas (espaço livre para o carimbo do gov.br) ----------
     if (y + 14 + 64 + 26 > LIM) y = continuacao();
     var ys = y + 14 + 64, sw = (CW - 40) / 2;
+    aprovPos = { p: paginas.indexOf(pg), x: ML + sw + 40, y: ys, w: sw };
     var assJ = rep.assPdf;
     if (assJ && assJ.w && assJ.h) {
       var kA = Math.min(sw * 0.8 / assJ.w, 58 / assJ.h), aw = assJ.w * kA, ah = assJ.h * kA;
@@ -1203,11 +1216,16 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
     var cb = enc.encode(p.ops.join('\n'));
     obj(pagObj[i] + 1, '<< /Length ' + cb.length + ' >>', cb);
   });
+  var infoN = nObj++;
+  var metaRQ = { v: 1, app: 'syndex-despesas', nome: rep.nome || '', departamento: rep.departamento || '', autorizado: rep.autorizado || '',
+    inicio: rep.inicio || '', fim: rep.fim || '', total: res.total, adiantamento: res.adi, notas: fotos.length,
+    gerado: new Date().toISOString(), aprov: aprovPos };
+  obj(infoN, '<< /Producer (Syndex Despesas de viagem) /SyndexRQ (' + btoa(unescape(encodeURIComponent(JSON.stringify(metaRQ)))) + ') >>');
   var xref = pos;
   var x = 'xref\n0 ' + nObj + '\n0000000000 65535 f \n';
   for (var j = 1; j < nObj; j++) x += ('0000000000' + offsets[j]).slice(-10) + ' 00000 n \n';
   push(x);
-  push('trailer\n<< /Size ' + nObj + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
+  push('trailer\n<< /Size ' + nObj + ' /Root 1 0 R /Info ' + infoN + ' 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
   var out = new Uint8Array(pos), o = 0;
   chunks.forEach(function (c) { out.set(c, o); o += c.length; });
   return out;
@@ -1234,6 +1252,9 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
   CATS.forEach(function (c) { CAT[c.id] = c; });
 
   var ICONS = {
+    pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     car: '<path d="M5 16.5h14v-3.8L17 8H7l-2 4.7z"/><path d="M5 12.7h14"/><circle cx="8.2" cy="16.8" r="1.7"/><circle cx="15.8" cy="16.8" r="1.7"/>',
     park: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M10 16.5v-9h3.2a2.7 2.7 0 0 1 0 5.4H10"/>',
     meal: '<path d="M7 3v7M5 3v4.5a2 2 0 0 0 4 0V3M7 10v11"/><path d="M17 21V3c-2.2 1.2-3.2 3.8-3.2 7v3H17"/>',
@@ -1300,7 +1321,7 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
     return {
       v: 1, atualizado: 0,
       config: { nome: '', departamento: 'Comercial', autorizado: '', valorKm: 1.65, kmV2: true,
-        adiantamento: 0, observacoes: '', assinatura: null },
+        adiantamento: 0, observacoes: '', assinatura: null, aprovador: false },
       despesas: []
     };
   }
@@ -1476,7 +1497,8 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
     p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Arquivo pronto');
     p.innerHTML = '<div class="pronto-in"><div class="pronto-t"><div><b>Arquivo pronto</b><span></span></div>' +
       '<button class="sh-x" type="button" id="pr-x" aria-label="Fechar">' + svg('x', 18) + '</button></div>' +
-      '<button class="primary" type="button" id="pr-share">Salvar ou enviar</button>' +
+      '<button class="primary" type="button" id="pr-share">' + (/APROVADO\.pdf$/i.test(file.name) ? 'Enviar ao financeiro' :
+        /Relat[oó]rio/i.test(file.name) ? 'Enviar para aprovação' : 'Salvar ou enviar') + '</button>' +
       '<button class="link" type="button" id="pr-down">Baixar o arquivo</button></div>';
     p.querySelector('.pronto-t span').textContent = file.name;
     document.body.appendChild(p);
@@ -1642,13 +1664,20 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
   // ---------------- Foto da nota (comprovante guardado) ----------------
   // Versão independente: as fotos ficam guardadas neste celular (IndexedDB), não em servidor.
   var urlFoto = {};
+  var idbP = null;
   function idbAbrir() {
-    return new Promise(function (res, rej) {
-      var r = indexedDB.open('syndex-despesas', 1);
-      r.onupgradeneeded = function () { r.result.createObjectStore('fotos'); };
+    if (idbP) return idbP;
+    idbP = new Promise(function (res, rej) {
+      var r = indexedDB.open('syndex-despesas', 2);
+      r.onupgradeneeded = function () {
+        var db = r.result;
+        if (!db.objectStoreNames.contains('fotos')) db.createObjectStore('fotos');
+        if (!db.objectStoreNames.contains('aprov')) db.createObjectStore('aprov', { keyPath: 'id' });
+      };
       r.onsuccess = function () { res(r.result); };
-      r.onerror = function () { rej(r.error); };
+      r.onerror = function () { idbP = null; rej(r.error); };
     });
+    return idbP;
   }
   function idbTx(db, modo, fn) {
     return new Promise(function (res, rej) {
@@ -2453,6 +2482,11 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
       '<label class="field"><span>Departamento</span><input id="d-dep" value="' + esc(c.departamento) + '"></label>' +
       '<label class="field"><span>Autorizado por</span><input id="d-aut" value="' + esc(c.autorizado) + '"></label>' +
       '<label class="field"><span>Valor pago por km (R$)</span><input id="d-km" inputmode="decimal" value="' + esc(numStr(c.valorKm, 2)) + '"></label>' +
+      (primeiro ? '' : '<div class="field"><span class="f-l">Perfil</span>' +
+        '<div class="chips" id="d-perfil" role="group" aria-label="Perfil">' +
+        [['comercial', 'Comercial'], ['aprovador', 'Aprovador(a)']].map(function (o) {
+          return '<button class="chip" type="button" data-perfil="' + o[0] + '" aria-pressed="' + ((o[0] === 'aprovador') === !!c.aprovador) + '">' + o[1] + '</button>';
+        }).join('') + '</div><p class="note" style="margin-top:6px">Aprovador(a) abre os relatórios recebidos, aprova com a própria assinatura e guarda o histórico de todos.</p></div>') +
       (primeiro ? '' : '<div class="field"><span class="f-l">Aparência do app</span>' +
         '<div class="chips" id="d-tema" role="group" aria-label="Aparência do app">' +
         [['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Escuro']].map(function (o) {
@@ -2480,6 +2514,15 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
       $('#d-limpar').addEventListener('click', function () { if (a) { blocoD(false); return; } dPad.limpar(); });
     }
     blocoD(false);
+    var pf = $('#d-perfil');
+    if (pf) pf.addEventListener('click', function (e) {
+      var b = e.target.closest('.chip');
+      if (!b) return;
+      var on = b.dataset.perfil === 'aprovador';
+      commit(function (s) { s.config.aprovador = on; });
+      Array.prototype.forEach.call(pf.querySelectorAll('.chip'), function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      renderAprov();
+    });
     var tm = $('#d-tema');
     if (tm) tm.addEventListener('click', function (e) {
       var b = e.target.closest('.chip');
@@ -2504,11 +2547,266 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
     });
   }
 
+  // ---------------- Aprovação (perfil Aprovador/a) ----------------
+  // O PDF do comercial leva dentro dele (metadados) quem é, os valores e a posição da linha "Aprovação".
+  // A aprovadora abre o PDF recebido, confere e aprova: a assinatura dela e a data/hora entram na linha
+  // "Aprovação" por uma atualização incremental do PDF, sem refazer o que o comercial gerou.
+  var aprovLista = [];
+  function bytesLatin1(b) {
+    var s = '', i;
+    for (i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+    return s;
+  }
+  function b64Json(o) { return btoa(unescape(encodeURIComponent(JSON.stringify(o)))); }
+  function jsonB64(s) { return JSON.parse(decodeURIComponent(escape(atob(s)))); }
+  function lerRelatorioPdf(bytes) {
+    var s = bytesLatin1(bytes);
+    if (s.slice(0, 5) !== '%PDF-') return { erro: 'nao-pdf' };
+    var ms = s.match(/\/SyndexRQ \(([A-Za-z0-9+\/=]+)\)/g);
+    if (!ms) return { erro: 'sem-dados' };
+    var meta;
+    try { meta = jsonB64(/\(([^)]+)\)/.exec(ms[ms.length - 1])[1]); } catch (e) { return { erro: 'sem-dados' }; }
+    var ap = s.match(/\/SyndexAprovado \(([A-Za-z0-9+\/=]+)\)/), aprovado = null;
+    if (ap) { try { aprovado = jsonB64(ap[1]); } catch (e) { aprovado = {}; } }
+    return { meta: meta, aprovado: aprovado, s: s };
+  }
+  function pdfTexto(t) {
+    var out = '';
+    Array.from(t).forEach(function (ch) {
+      var c = ch.charCodeAt(0);
+      if (c === 40 || c === 41 || c === 92) out += '\\' + ch;
+      else if (c >= 32 && c < 127) out += ch;
+      else if (c >= 160 && c < 256) out += '\\' + ('00' + c.toString(8)).slice(-3);
+      else out += '?';
+    });
+    return '(' + out + ')';
+  }
+  function largTexto(t, size) {
+    var soma = 0;
+    Array.from(t).forEach(function (ch) { var c = ch.charCodeAt(0); soma += (c >= 32 && c < 256 && PDF_LARG.H[c - 32]) || 556; });
+    return soma / 1000 * size;
+  }
+  // acrescenta ao PDF original: imagem da assinatura, um conteúdo novo na página da "Aprovação" e a marca de aprovado
+  function carimbarAprovacao(bytes, lido, ass, quem, quando) {
+    var s = lido.s, meta = lido.meta, a = meta.aprov;
+    var sx = s.lastIndexOf('startxref');
+    var prev = parseInt(s.slice(sx + 9).replace(/^\s+/, ''), 10);
+    var size = (s.match(/\/Size (\d+)/g) || []).reduce(function (m, t) { return Math.max(m, parseInt(t.slice(6), 10)); }, 0);
+    var root = (s.match(/\/Root (\d+ \d+ R)/g) || []).pop();
+    var kids = /\/Type \/Pages \/Kids \[([^\]]*)\]/.exec(s);
+    if (!(sx > 0) || !(prev >= 0) || !size || !root || !kids) throw new Error('estrutura');
+    var pags = kids[1].match(/\d+(?= 0 R)/g), pn = pags && pags[a.p];
+    if (!pn) throw new Error('pagina');
+    var re = new RegExp('(?:^|\\n)' + pn + ' 0 obj\\n(<< /Type /Page [^\\n]*>>)\\nendobj', 'g'), m, dict = null;
+    while ((m = re.exec(s))) dict = m[1];
+    if (!dict) throw new Error('pagina');
+    var iN = size, cN = size + 1, fN = size + 2;
+    var cm = /\/Contents (\d+ 0 R|\[[^\]]*\])/.exec(dict);
+    if (!cm) throw new Error('conteudo');
+    var novoC = cm[1].charAt(0) === '[' ? cm[1].slice(0, -1) + ' ' + cN + ' 0 R]' : '[' + cm[1] + ' ' + cN + ' 0 R]';
+    dict = dict.replace(cm[0], '/Contents ' + novoC);
+    dict = /\/XObject << /.test(dict) ? dict.replace('/XObject << ', '/XObject << /ImAp ' + iN + ' 0 R ')
+      : dict.replace('/Resources << ', '/Resources << /XObject << /ImAp ' + iN + ' 0 R >> ');
+    var H = 842, f = function (n) { return (Math.round(n * 100) / 100).toString(); };
+    var k = Math.min(a.w * 0.8 / ass.w, 58 / ass.h), aw = ass.w * k, ah = ass.h * k, px = a.x + (a.w - aw) / 2;
+    var txt = 'Aprovado em ' + quando, ts = 6.8, tw = largTexto(txt, ts);
+    var ops = 'q ' + f(aw) + ' 0 0 ' + f(ah) + ' ' + f(px) + ' ' + f(H - a.y + 1) + ' cm /ImAp Do Q\n' +
+      '0.420 0.467 0.502 rg BT /F1 ' + f(ts) + ' Tf ' + f(a.x + a.w / 2 - tw / 2) + ' ' + f(H - (a.y + 30.5)) + ' Td ' + pdfTexto(txt) + ' Tj ET';
+    var enc = new TextEncoder(), partes = [], pos = bytes.length, offs = {};
+    var add = function (x) { if (typeof x === 'string') x = enc.encode(x); partes.push(x); pos += x.length; };
+    add('\n');
+    offs[iN] = pos;
+    add(iN + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + ass.w + ' /Height ' + ass.h +
+      ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + ass.jpeg.length + ' >>\nstream\n');
+    add(ass.jpeg); add('\nendstream\nendobj\n');
+    var cb = enc.encode(ops);
+    offs[cN] = pos;
+    add(cN + ' 0 obj\n<< /Length ' + cb.length + ' >>\nstream\n'); add(cb); add('\nendstream\nendobj\n');
+    offs[pn] = pos;
+    add(pn + ' 0 obj\n' + dict + '\nendobj\n');
+    offs[fN] = pos;
+    add(fN + ' 0 obj\n<< /Producer (Syndex Despesas de viagem) /SyndexRQ (' + b64Json(meta) + ') /SyndexAprovado (' +
+      b64Json({ por: quem, quando: quando }) + ') >>\nendobj\n');
+    var xref = pos, lx = function (o) { return ('0000000000' + o).slice(-10) + ' 00000 n \n'; };
+    add('xref\n0 1\n0000000000 65535 f \n' + iN + ' 3\n' + lx(offs[iN]) + lx(offs[cN]) + lx(offs[fN]) + pn + ' 1\n' + lx(offs[pn]) +
+      'trailer\n<< /Size ' + (size + 3) + ' /Root ' + root.slice(6) + ' /Info ' + fN + ' 0 R /Prev ' + prev + ' >>\nstartxref\n' + xref + '\n%%EOF\n');
+    var out = new Uint8Array(pos), o = bytes.length;
+    out.set(bytes, 0);
+    partes.forEach(function (p) { out.set(p, o); o += p.length; });
+    return out;
+  }
+
+  // histórico de aprovações (só no celular da aprovadora)
+  function idbAprov(modo, fn) {
+    return idbAbrir().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction('aprov', modo);
+        fn(tx.objectStore('aprov'));
+        tx.oncomplete = function () { res(); };
+        tx.onerror = tx.onabort = function () { rej(tx.error); };
+      });
+    });
+  }
+  function carregarAprov() {
+    return idbAbrir().then(function (db) {
+      return new Promise(function (res) {
+        var lista = [], tx = db.transaction('aprov', 'readonly'), cur = tx.objectStore('aprov').openCursor();
+        cur.onsuccess = function () { var c = cur.result; if (c) { lista.push(c.value); c.continue(); } };
+        tx.oncomplete = function () { res(lista); };
+        tx.onerror = function () { res([]); };
+      });
+    }).catch(function () { return []; });
+  }
+  function periodoMeta(m) {
+    var d = function (x) { return x ? x.split('-').reverse().slice(0, 2).join('/') : ''; };
+    return !m.inicio ? '' : m.inicio === m.fim ? d(m.inicio) : d(m.inicio) + ' a ' + d(m.fim);
+  }
+  function agoraBR() {
+    var d = new Date(), p = function (n) { return ('0' + n).slice(-2); };
+    return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function resumoMetaHtml(m) {
+    var s = r2((m.total || 0) - (m.adiantamento || 0));
+    return '<div class="resumo">' +
+      '<div class="res-row"><span>Colaborador</span><span>' + esc(m.nome || '–') + '</span></div>' +
+      (m.departamento ? '<div class="res-row muted"><span>Departamento</span><span>' + esc(m.departamento) + '</span></div>' : '') +
+      '<div class="res-row muted"><span>Período</span><span>' + esc(periodoMeta(m) || '–') + '</span></div>' +
+      '<div class="res-row strong"><span>Total das despesas</span><span class="num">' + fmtBRL(m.total || 0) + '</span></div>' +
+      '<div class="res-row muted"><span>(–) Adiantamento</span><span class="num">' + fmtBRL(m.adiantamento || 0) + '</span></div>' +
+      '<div class="res-row saldo' + (s < 0 ? ' neg' : '') + '"><span>' + (s < 0 ? 'A devolver pelo colaborador' : 'A pagar ao colaborador') +
+      '</span><span class="num">' + fmtBRL(Math.abs(s)) + '</span></div>' +
+      '<div class="res-row muted"><span>Fotos de notas no PDF</span><span>' + (m.notas || 0) + '</span></div></div>';
+  }
+  async function renderAprov() {
+    var sec = $('#sec-aprov');
+    if (!sec) return;
+    sec.hidden = !state.config.aprovador;
+    if (sec.hidden) return;
+    aprovLista = await carregarAprov();
+    aprovLista.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    var box = $('#aprov-lista');
+    if (!aprovLista.length) {
+      box.innerHTML = '<p class="empty">Os relatórios que você aprovar ou devolver ficam guardados aqui, separados por comercial.</p>';
+      return;
+    }
+    var grupos = {};
+    aprovLista.forEach(function (v) { var n = (v.meta && v.meta.nome) || 'Sem nome'; (grupos[n] = grupos[n] || []).push(v); });
+    box.innerHTML = Object.keys(grupos).sort(function (a, b) { return a.localeCompare(b, 'pt-BR'); }).map(function (n) {
+      var g = grupos[n];
+      return '<div class="day"><div class="day-h"><span>' + esc(n) + '</span><span>' + g.length + (g.length === 1 ? ' relatório' : ' relatórios') +
+        '</span></div><div class="day-box">' + g.map(function (v) {
+          var ok = v.status === 'aprovado';
+          return '<button class="item" type="button" data-aprov="' + esc(v.id) + '"><span class="item-ico' + (ok ? ' ok' : ' dev') + '">' + svg(ok ? 'check' : 'undo', 18) + '</span>' +
+            '<span class="item-txt"><span class="item-cat">' + esc(periodoMeta(v.meta) || 'Relatório') + '</span><span class="item-desc">' +
+            (ok ? 'Aprovado em ' : 'Devolvido em ') + esc(v.quando) + '</span></span>' +
+            '<span class="item-val"><span class="item-amt">' + esc(fmtBRL(v.meta.total || 0)) + '</span></span></button>';
+        }).join('') + '</div></div>';
+    }).join('');
+  }
+  function abrirAprovItem(id) {
+    var v = aprovLista.filter(function (x) { return x.id === id; })[0];
+    if (!v) return;
+    var ok = v.status === 'aprovado';
+    openSheet(head('receipt', v.meta.nome || 'Relatório', periodoMeta(v.meta)) + resumoMetaHtml(v.meta) +
+      '<p class="callout' + (ok ? '' : ' warn') + '" style="margin-top:12px">' + (ok ? 'Aprovado em ' + esc(v.quando) :
+        'Devolvido em ' + esc(v.quando) + (v.motivo ? ': ' + esc(v.motivo) : '')) + '</p>' +
+      '<button class="primary" type="button" id="ap-enviar">' + (ok ? 'Enviar ao financeiro' : 'Enviar o PDF de novo') + '</button>' +
+      '<div class="actions"><button class="link-danger" type="button" id="ap-apagar">Tirar do histórico</button></div>');
+    $('#ap-enviar').addEventListener('click', function () { downloadsLocal.save({ filename: v.arquivo, data: v.pdf }); });
+    $('#ap-apagar').addEventListener('click', function () {
+      var b = this;
+      if (!b.dataset.conf) { b.dataset.conf = '1'; b.textContent = 'Toque de novo para tirar do histórico'; return; }
+      idbAprov('readwrite', function (st) { st.delete(v.id); }).then(function () { closeSheet(); renderAprov(); toast('Tirado do histórico'); });
+    });
+  }
+  async function receberPdf(file) {
+    var bytes;
+    try { bytes = new Uint8Array(await file.arrayBuffer()); } catch (e) { toast('Não consegui abrir esse arquivo'); return; }
+    var lido = lerRelatorioPdf(bytes), m = lido.meta;
+    if (lido.erro || !m || !m.aprov) {
+      openSheet(head('receipt', 'Não dá para aprovar este arquivo', file.name) + '<p class="msg err">' +
+        (lido.erro === 'nao-pdf' ? 'Esse arquivo não é um PDF.' : lido.erro ?
+          'Esse PDF não foi gerado pelo app de despesas, ou é de uma versão antiga do app. Peça ao comercial para gerar de novo pelo app e enviar o PDF do relatório.' :
+          'Esse PDF tem só as fotos das notas. Peça ao comercial o PDF do relatório.') + '</p>');
+      return;
+    }
+    var ja = lido.aprovado, a = state.config.assinatura;
+    var primeiro = function (t) { return String(t || '').trim().toLowerCase().split(/\s+/)[0]; };
+    openSheet(head('receipt', 'Relatório para aprovar', file.name) + resumoMetaHtml(m) +
+      (ja ? '<p class="callout warn" style="margin-top:12px">Este relatório já foi aprovado' + (ja.por ? ' por ' + esc(ja.por) : '') +
+        (ja.quando ? ' em ' + esc(ja.quando) : '') + '.</p>' : '') +
+      (m.autorizado && primeiro(m.autorizado) !== primeiro(state.config.nome) ?
+        '<p class="note">No relatório, quem aprova é: ' + esc(m.autorizado) + '.</p>' : '') +
+      (ja ? '' : '<div class="ass"><span class="f-l">Sua assinatura (vai na linha “Aprovação”, com data e hora)</span>' +
+        (a ? '<div class="ass-img"><img src="' + esc(a) + '" alt="Sua assinatura"></div>' :
+          '<p class="msg err">Desenhe sua assinatura antes de aprovar.</p>') + '</div>') +
+      '<div class="gap"></div>' +
+      (ja ? '' : a ? '<button class="primary" type="button" id="ap-ok">' + svg('pen', 18) + ' Aprovar e assinar</button>' :
+        '<button class="primary" type="button" id="ap-dados">Desenhar minha assinatura</button>') +
+      (ja ? '' : '<div class="gap" style="height:10px"></div><button class="secondary" type="button" id="ap-dev">Devolver para ajuste</button>') +
+      '<div id="ap-devbox"></div><p class="msg" id="ap-msg" role="status"></p>');
+    var dados = $('#ap-dados');
+    if (dados) dados.addEventListener('click', function () { closeSheet(); setTimeout(function () { abrirDados(false); }, 260); });
+    var okBtn = $('#ap-ok');
+    if (okBtn) okBtn.addEventListener('click', async function () {
+      var rot = okBtn.innerHTML;
+      okBtn.disabled = true; okBtn.textContent = 'Assinando…';
+      try {
+        var ass = await assinaturaJpeg(state.config.assinatura);
+        if (!ass) throw new Error('assinatura');
+        var quando = agoraBR();
+        var novo = carimbarAprovacao(bytes, lido, ass, state.config.nome || '', quando);
+        var nome = file.name.replace(/\.pdf$/i, '').replace(/\s*-\s*APROVADO$/i, '') + ' - APROVADO.pdf';
+        var blob = new Blob([novo], { type: 'application/pdf' });
+        await idbAprov('readwrite', function (st) {
+          st.put({ id: novoIdFoto(), meta: m, status: 'aprovado', quando: quando, ts: Date.now(), arquivo: nome, pdf: blob });
+        });
+        closeSheet();
+        renderAprov();
+        toast('Relatório aprovado');
+        downloadsLocal.save({ filename: nome, data: blob });
+      } catch (e) {
+        okBtn.disabled = false; okBtn.innerHTML = rot;
+        $('#ap-msg').className = 'msg err';
+        $('#ap-msg').textContent = 'Não consegui assinar este PDF. Peça ao comercial para gerar de novo pelo app e enviar sem assinar no gov.br antes.';
+      }
+    });
+    var dev = $('#ap-dev');
+    if (dev) dev.addEventListener('click', function () {
+      $('#ap-devbox').innerHTML = '<label class="field"><span>O que precisa ajustar?</span>' +
+        '<textarea id="ap-motivo" placeholder="Ex.: falta a foto da nota do hotel"></textarea></label>' +
+        '<div class="gap" style="height:10px"></div><button class="primary" type="button" id="ap-devok">Enviar devolução</button>';
+      $('#ap-motivo').focus();
+      $('#ap-devok').addEventListener('click', function () {
+        var motivo = $('#ap-motivo').value.trim();
+        if (!motivo) { $('#ap-motivo').focus(); return; }
+        var quando = agoraBR();
+        var texto = 'Relatório de despesas de ' + (m.nome || '') + ' (' + periodoMeta(m) + ', ' + fmtBRL(m.total || 0) +
+          ') devolvido para ajuste: ' + motivo;
+        var envio = null;
+        try { if (navigator.share) envio = navigator.share({ text: texto }).catch(function () {}); } catch (e) { envio = null; }
+        if (!envio) { try { navigator.clipboard.writeText(texto); toast('Mensagem copiada. Cole no WhatsApp do comercial.'); } catch (e) { /* sem área de transferência */ } }
+        idbAprov('readwrite', function (st) {
+          st.put({ id: novoIdFoto(), meta: m, status: 'devolvido', motivo: motivo, quando: quando, ts: Date.now(), arquivo: file.name,
+            pdf: new Blob([bytes], { type: 'application/pdf' }) });
+        }).then(function () { closeSheet(); renderAprov(); if (envio) toast('Devolução registrada'); });
+      });
+    });
+  }
+
   // ---------------- Início ----------------
   $('#btn-hist').innerHTML = svg('clock', 20) + '<span>Histórico</span>';
   $('#btn-dados').innerHTML = svg('sliders', 20);
   aplicarTema(temaAtual());
   $('#btn-dados').addEventListener('click', function () { abrirDados(false); });
+  $('#btn-receber').addEventListener('click', function () { $('#in-pdf').click(); });
+  $('#in-pdf').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) receberPdf(f);
+  });
+  $('#aprov-lista').addEventListener('click', function (e) { var b = e.target.closest('[data-aprov]'); if (b) abrirAprovItem(b.dataset.aprov); });
+  renderAprov();
   renderTiles();
   render();
   $('#tiles').addEventListener('click', function (e) {
