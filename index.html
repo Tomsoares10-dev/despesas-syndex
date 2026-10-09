@@ -308,6 +308,8 @@ img{max-width:100%}
 .pronto-t b{font-size:16px; font-weight:600}
 .pronto-t span{font-size:13.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .pronto .link{align-self:center; padding:4px 2px}
+#btn-dados{padding:0 11px}
+@media (max-width:440px){ #btn-hist{padding:0 11px} #btn-hist span{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)} .top{gap:10px} }
 </style>
 </head>
 <body>
@@ -317,6 +319,7 @@ img{max-width:100%}
     <h1>Despesas de viagem</h1>
     <p class="status" id="status" data-s="local">Salvo neste aparelho</p>
   </div>
+  <button class="icon-btn" id="btn-dados" type="button" aria-label="Seus dados e assinatura"></button>
   <button class="icon-btn" id="btn-hist" type="button" aria-label="Histórico de viagens"></button>
 </header>
 
@@ -1107,7 +1110,12 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
     // ---------- assinaturas (espaço livre para o carimbo do gov.br) ----------
     if (y + 14 + 64 + 26 > LIM) y = continuacao();
     var ys = y + 14 + 64, sw = (CW - 40) / 2;
-    [[ML, rep.nome || '', 'Colaborador · assinatura gov.br'], [ML + sw + 40, rep.autorizado || '', 'Aprovação']].forEach(function (s) {
+    var assJ = rep.assPdf;
+    if (assJ && assJ.w && assJ.h) {
+      var kA = Math.min(sw * 0.8 / assJ.w, 58 / assJ.h), aw = assJ.w * kA, ah = assJ.h * kA;
+      imagem('ImA', ML + (sw - aw) / 2, ys - ah - 1, aw, ah);
+    }
+    [[ML, rep.nome || '', assJ ? 'Colaborador' : 'Colaborador · assinatura gov.br'], [ML + sw + 40, rep.autorizado || '', 'Aprovação']].forEach(function (s) {
       linha(s[0], ys, s[0] + sw, ys, COR.ink, 0.6);
       var nm = caber(s[1], true, 8.6, sw, 7);
       if (nm.t) txt(s[0] + sw / 2, ys + 11.5, nm.t, { b: true, size: nm.s, align: 'c' });
@@ -1173,6 +1181,7 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
   var usaLogo = paginas.some(function (p) { return p.imgs.ImL; });
   var imgsLista = [];
   if (usaLogo) imgsLista.push({ nome: 'ImL', d: logo });
+  if (paginas.some(function (p) { return p.imgs.ImA; })) imgsLista.push({ nome: 'ImA', d: rep.assPdf });
   fotos.forEach(function (f, i) { imgsLista.push({ nome: 'ImF' + i, d: f }); });
   var imgObj = {}, nObj = 5;
   imgsLista.forEach(function (im) { imgObj[im.nome] = nObj++; });
@@ -2024,6 +2033,16 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
     var el = document.getElementById('logo');
     return { jpeg: b64ToBytes(LOGO_B64), w: el.naturalWidth || 364, h: el.naturalHeight || 138 };
   }
+  // assinatura desenhada (PNG) em JPEG com fundo branco, para o PDF
+  async function assinaturaJpeg(url) {
+    if (typeof url !== 'string' || url.indexOf('data:image/png') !== 0) return null;
+    try {
+      var img = await new Promise(function (res, rej) { var im = new Image(); im.onload = function () { res(im); }; im.onerror = rej; im.src = url; });
+      var w = img.naturalWidth, h = img.naturalHeight;
+      var blob = await canvasJpeg(img, w, h, 0.92);
+      return blob ? { jpeg: new Uint8Array(await blob.arrayBuffer()), w: w, h: h } : null;
+    } catch (e) { return null; }
+  }
   // fotos das notas no formato do PDF (4 por folha, na ordem das datas)
   async function carregarFotos(rel, btn) {
     await assetsP;
@@ -2116,14 +2135,16 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
       if (!dl) { avisaSemDownload(msg); return; }
       var cf = await carregarFotos(rel, btn);
       var nb = nomeBase(rel), pdf;
-      try { pdf = buildRelatorioPdf(montarRep(rel), logoPdf(), cf.fotos); } catch (e) {
+      var repA = montarRep(rel);
+      repA.assPdf = await assinaturaJpeg(rel.assinatura);
+      try { pdf = buildRelatorioPdf(repA, logoPdf(), cf.fotos); } catch (e) {
         msg.className = 'msg err'; msg.textContent = 'Não consegui montar o PDF. Tente de novo.'; return;
       }
       try {
         await dl.save({ filename: limpaNome('RQ 04 079 - Relatório' + (nb.nome ? ' ' + nb.nome : '') + ' - ' + nb.per + '.pdf'), data: new Blob([pdf]) });
         msg.className = 'msg ok';
         msg.textContent = 'PDF pronto' + (cf.fotos.length ? ', com ' + cf.fotos.length + (cf.fotos.length === 1 ? ' nota' : ' notas') : '') +
-          '. Assine no gov.br (assinador.iti.br) tocando acima da linha “Colaborador”.' +
+          (rel.assinatura ? ', já com a sua assinatura.' : '. Sem assinatura: desenhe a sua no botão de ajustes, no topo do app.') +
           (cf.falhas ? ' ' + cf.falhas + (cf.falhas === 1 ? ' foto não pôde' : ' fotos não puderam') + ' ser carregadas.' : '');
       } catch (e) {
         msg.className = e && e.code === 'declined' ? 'msg' : 'msg err';
@@ -2207,14 +2228,14 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
       '<div class="gap"></div>' +
       '<button class="primary" type="button" id="g-baixar">Baixar Excel do relatório</button>' +
       '<div class="gap" style="height:10px"></div><button class="secondary" type="button" id="g-pdf">' + svg('receipt', 18) +
-        'Baixar PDF para assinar no gov.br</button><p class="note center">Relatório' + (comFoto.length ? ' e fotos das notas' : '') +
-        ' num arquivo só, com a linha “Colaborador” livre para a assinatura do gov.br.</p>' +
+        'Baixar PDF do relatório</button><p class="note center">Relatório' + (comFoto.length ? ' e fotos das notas' : '') +
+        ' num arquivo só, com a sua assinatura acima de “Colaborador”.</p>' +
       (comFoto.length ? '<div class="gap" style="height:10px"></div><button class="secondary" type="button" id="g-comp">' + svg('clip', 18) +
         'Baixar fotos das notas (PDF)</button><p class="note center">' + comFoto.length + ' de ' + semKm.length +
         (semKm.length === 1 ? ' despesa' : ' despesas') + ' com foto. KM rodado não precisa.</p>' : '') +
       '<p class="msg" id="g-msg" role="status"></p>' +
       '<div class="gap"></div>' +
-      '<div class="links"><button class="link" type="button" id="g-dados">Alterar nome, aprovador ou valor do km</button>' +
+      '<div class="links"><button class="link" type="button" id="g-dados">Alterar nome, aprovador, valor do km ou assinatura</button>' +
       '<div id="g-fechar" style="align-self:stretch;text-align:center"></div></div>');
 
     var adiEl = $('#g-adi'), msg = $('#g-msg'), btn = $('#g-baixar');
@@ -2246,7 +2267,7 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
         $('#g-reass').addEventListener('click', function () { blocoAssinatura(true); });
         return;
       }
-      box.innerHTML = '<span class="f-l">Assinatura <span style="opacity:.7">(vai no Excel, acima de “Colaborador”)</span></span>' +
+      box.innerHTML = '<span class="f-l">Sua assinatura <span style="opacity:.7">(fica guardada neste celular e sai no PDF e no Excel)</span></span>' +
         '<div class="pad"><canvas id="g-pad" aria-label="Quadro para assinar com o dedo"></canvas>' +
         '<span class="pad-ph" id="g-ph">Assine aqui com o dedo</span><span class="pad-line" aria-hidden="true"></span></div>' +
         '<div class="row2" style="margin-top:8px"><button class="btn-plain" type="button" id="g-limpar">' + (a ? 'Cancelar' : 'Limpar') + '</button>' +
@@ -2282,8 +2303,12 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
     });
     var comp = $('#g-comp');
     if (comp) comp.addEventListener('click', function () { baixarFotos(relAtual(), comp, msg); });
-    $('#g-pdf').addEventListener('click', function () { guardaAdiantamento(); baixarRelPdf(relAtual(), $('#g-pdf'), msg); });
-    $('#g-dados').addEventListener('click', abrirDados);
+    $('#g-pdf').addEventListener('click', function () {
+      guardaAdiantamento();
+      if (pad && !pad.vazio()) usarAssinatura();
+      baixarRelPdf(relAtual(), $('#g-pdf'), msg);
+    });
+    $('#g-dados').addEventListener('click', function () { abrirDados(false); });
 
     function botaoFechar() {
       $('#g-fechar').innerHTML = '<button class="link" type="button" id="g-fechar-b">Fechar viagem e guardar no histórico</button>';
@@ -2392,7 +2417,7 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
       '<div class="gap"></div>' +
       '<button class="primary" type="button" id="h-xlsx">Baixar Excel desta viagem</button>' +
       '<div class="gap" style="height:10px"></div><button class="secondary" type="button" id="h-relpdf">' + svg('receipt', 18) +
-        'Baixar PDF para assinar no gov.br</button>' +
+        'Baixar PDF do relatório</button>' +
       (fotos ? '<div class="gap" style="height:10px"></div><button class="secondary" type="button" id="h-pdf">' + svg('clip', 18) +
         'Baixar fotos das notas (PDF)</button>' : '') +
       '<p class="msg" id="h-msg" role="status"></p>' +
@@ -2407,6 +2432,7 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
 
   // ---------------- Dados do relatório ----------------
   function abrirDados(primeiro) {
+    primeiro = primeiro === true;
     var c = state.config;
     var onde = 'Os lançamentos e as fotos ficam guardados só neste celular. Gere o PDF e envie ao financeiro ao fechar cada viagem.';
     openSheet(head('sliders', primeiro ? 'Bem-vindo! Seus dados' : 'Dados do relatório',
@@ -2415,9 +2441,28 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
       '<label class="field"><span>Departamento</span><input id="d-dep" value="' + esc(c.departamento) + '"></label>' +
       '<label class="field"><span>Autorizado por</span><input id="d-aut" value="' + esc(c.autorizado) + '"></label>' +
       '<label class="field"><span>Valor pago por km (R$)</span><input id="d-km" inputmode="decimal" value="' + esc(numStr(c.valorKm, 2)) + '"></label>' +
+      '<div class="ass" id="d-ass"></div>' +
       '<p class="err" id="d-err" role="alert"></p>' +
       '<button class="primary" type="button" id="d-save">Salvar dados</button>' +
       '<p class="note">' + esc(onde) + '</p>');
+    var dPad = null;
+    function blocoD(desenhar) {
+      var a = state.config.assinatura, box = $('#d-ass');
+      dPad = null;
+      if (a && !desenhar) {
+        box.innerHTML = '<span class="f-l">Sua assinatura</span><div class="ass-img"><img src="' + esc(a) + '" alt="Sua assinatura"></div>' +
+          '<div class="actions"><button class="link" type="button" id="d-reass">Assinar de novo</button></div>';
+        $('#d-reass').addEventListener('click', function () { blocoD(true); });
+        return;
+      }
+      box.innerHTML = '<span class="f-l">Sua assinatura <span style="opacity:.7">(fica guardada neste celular e sai no PDF)</span></span>' +
+        '<div class="pad"><canvas id="d-pad" aria-label="Quadro para assinar com o dedo"></canvas>' +
+        '<span class="pad-ph" id="d-ph">Assine aqui com o dedo</span><span class="pad-line" aria-hidden="true"></span></div>' +
+        '<div class="actions"><button class="link" type="button" id="d-limpar">' + (a ? 'Cancelar' : 'Limpar') + '</button></div>';
+      dPad = montarPad($('#d-pad'), function (tem) { $('#d-ph').hidden = tem; });
+      $('#d-limpar').addEventListener('click', function () { if (a) { blocoD(false); return; } dPad.limpar(); });
+    }
+    blocoD(false);
     $('#d-save').addEventListener('click', function () {
       var km = parseNum($('#d-km').value);
       if (!$('#d-nome').value.trim()) { $('#d-err').textContent = 'Digite seu nome.'; $('#d-nome').focus(); return; }
@@ -2428,6 +2473,7 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
         s.config.departamento = $('#d-dep').value.trim();
         s.config.autorizado = $('#d-aut').value.trim();
         s.config.valorKm = km;
+        if (dPad && !dPad.vazio()) { var u = dPad.exportar(); if (u) s.config.assinatura = u; }
       });
       closeSheet();
       toast('Dados salvos');
@@ -2436,6 +2482,8 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
 
   // ---------------- Início ----------------
   $('#btn-hist').innerHTML = svg('clock', 20) + '<span>Histórico</span>';
+  $('#btn-dados').innerHTML = svg('sliders', 20);
+  $('#btn-dados').addEventListener('click', function () { abrirDados(false); });
   renderTiles();
   render();
   $('#tiles').addEventListener('click', function (e) {
