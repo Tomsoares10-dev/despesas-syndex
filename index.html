@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Despesas">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#003366">
+<script>try{var t=localStorage.getItem('syndex-tema');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
@@ -2430,6 +2431,17 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
     $('#h-voltar').addEventListener('click', abrirHistorico);
   }
 
+  // ---------------- Aparência (fica guardada só neste celular) ----------------
+  function temaAtual() { try { return localStorage.getItem('syndex-tema') || 'auto'; } catch (e) { return 'auto'; } }
+  function aplicarTema(t) {
+    var r = document.documentElement;
+    if (t === 'light' || t === 'dark') r.setAttribute('data-theme', t); else r.removeAttribute('data-theme');
+    var escuro = t === 'dark' || (t !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', escuro ? '#0A1520' : '#003366');
+    try { if (t === 'light' || t === 'dark') localStorage.setItem('syndex-tema', t); else localStorage.removeItem('syndex-tema'); } catch (e) { /* sem armazenamento */ }
+  }
+
   // ---------------- Dados do relatório ----------------
   function abrirDados(primeiro) {
     primeiro = primeiro === true;
@@ -2441,6 +2453,11 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
       '<label class="field"><span>Departamento</span><input id="d-dep" value="' + esc(c.departamento) + '"></label>' +
       '<label class="field"><span>Autorizado por</span><input id="d-aut" value="' + esc(c.autorizado) + '"></label>' +
       '<label class="field"><span>Valor pago por km (R$)</span><input id="d-km" inputmode="decimal" value="' + esc(numStr(c.valorKm, 2)) + '"></label>' +
+      (primeiro ? '' : '<div class="field"><span class="f-l">Aparência do app</span>' +
+        '<div class="chips" id="d-tema" role="group" aria-label="Aparência do app">' +
+        [['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Escuro']].map(function (o) {
+          return '<button class="chip" type="button" data-tema="' + o[0] + '" aria-pressed="' + (temaAtual() === o[0]) + '">' + o[1] + '</button>';
+        }).join('') + '</div><p class="note" style="margin-top:6px">Automático segue o modo claro/escuro do celular.</p></div>') +
       '<div class="ass" id="d-ass"></div>' +
       '<p class="err" id="d-err" role="alert"></p>' +
       '<button class="primary" type="button" id="d-save">Salvar dados</button>' +
@@ -2463,6 +2480,13 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
       $('#d-limpar').addEventListener('click', function () { if (a) { blocoD(false); return; } dPad.limpar(); });
     }
     blocoD(false);
+    var tm = $('#d-tema');
+    if (tm) tm.addEventListener('click', function (e) {
+      var b = e.target.closest('.chip');
+      if (!b) return;
+      aplicarTema(b.dataset.tema);
+      Array.prototype.forEach.call(tm.querySelectorAll('.chip'), function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+    });
     $('#d-save').addEventListener('click', function () {
       var km = parseNum($('#d-km').value);
       if (!$('#d-nome').value.trim()) { $('#d-err').textContent = 'Digite seu nome.'; $('#d-nome').focus(); return; }
@@ -2483,6 +2507,7 @@ function buildRelatorioPdf(rep, logo, fotos, opts) {
   // ---------------- Início ----------------
   $('#btn-hist').innerHTML = svg('clock', 20) + '<span>Histórico</span>';
   $('#btn-dados').innerHTML = svg('sliders', 20);
+  aplicarTema(temaAtual());
   $('#btn-dados').addEventListener('click', function () { abrirDados(false); });
   renderTiles();
   render();
